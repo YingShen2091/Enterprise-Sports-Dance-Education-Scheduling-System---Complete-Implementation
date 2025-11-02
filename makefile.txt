@@ -1,0 +1,233 @@
+# Makefile for Sports Dance Education Scheduling System
+
+.PHONY: help setup install clean test lint format run docker-build docker-run docs benchmark deploy
+
+# Variables
+PYTHON := python3
+PIP := $(PYTHON) -m pip
+PROJECT_NAME := sports-dance-scheduling
+DOCKER_IMAGE := sports-dance-scheduler
+DOCKER_TAG := latest
+
+# Default target
+help: ## Show this help message
+	@echo "Sports Dance Education Scheduling System - Makefile Commands"
+	@echo "============================================================"
+	@echo ""
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+# Development Setup
+setup: ## Set up development environment
+	$(PYTHON) -m venv venv
+	@echo "Virtual environment created. Activate with:"
+	@echo "  source venv/bin/activate (Linux/Mac)"
+	@echo "  venv\\Scripts\\activate (Windows)"
+
+install: ## Install all dependencies
+	$(PIP) install --upgrade pip
+	$(PIP) install -r requirements.txt
+	$(PIP) install -e ".[dev]"
+	pre-commit install
+
+install-cuda: ## Install with CUDA support
+	$(PIP) install --upgrade pip
+	$(PIP) install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+	$(PIP) install -r requirements.txt
+	$(PIP) install -e ".[dev]"
+
+# Cleaning
+clean: ## Clean build artifacts and cache
+	find . -type f -name '*.pyc' -delete
+	find . -type d -name '__pycache__' -delete
+	find . -type d -name '*.egg-info' -exec rm -rf {} +
+	find . -type d -name '.pytest_cache' -exec rm -rf {} +
+	find . -type d -name '.mypy_cache' -exec rm -rf {} +
+	rm -rf build dist htmlcov .coverage coverage.xml
+	rm -rf logs/*.log
+	rm -rf .benchmarks
+
+clean-data: ## Clean generated data files (careful!)
+	rm -f *.db
+	rm -rf data/processed/*
+	rm -rf checkpoints/*
+	rm -rf models/*.pt models/*.pth models/*.onnx
+
+# Code Quality
+lint: ## Run all linters
+	@echo "Running Black..."
+	black --check .
+	@echo "Running isort..."
+	isort --check-only .
+	@echo "Running Flake8..."
+	flake8 .
+	@echo "Running MyPy..."
+	mypy --ignore-missing-imports .
+
+format: ## Format code automatically
+	black .
+	isort .
+
+check-security: ## Run security checks
+	bandit -r sports_dance_scheduling/
+	safety check
+	pip-audit
+
+# Testing
+test: ## Run all tests
+	pytest tests/ -v
+
+test-coverage: ## Run tests with coverage report
+	pytest tests/ --cov=sports_dance_scheduling --cov-report=html --cov-report=term
+	@echo "Coverage report generated in htmlcov/index.html"
+
+test-fast: ## Run fast tests only
+	pytest tests/ -v -m "not slow"
+
+test-integration: ## Run integration tests
+	pytest tests/integration/ -v
+
+test-unit: ## Run unit tests only
+	pytest tests/unit/ -v
+
+benchmark: ## Run performance benchmarks
+	pytest tests/benchmarks/ --benchmark-only --benchmark-autosave
+
+# Running the Application
+run: ## Run the main application
+	$(PYTHON) sports_dance_scheduling.py
+
+run-dev: ## Run in development mode
+	$(PYTHON) sports_dance_scheduling.py --config config.yaml --debug
+
+run-api: ## Run the API server
+	uvicorn api:app --reload --host 0.0.0.0 --port 8000
+
+train: ## Train the model
+	$(PYTHON) -m sports_dance_scheduling.train --config config.yaml
+
+evaluate: ## Evaluate model performance
+	$(PYTHON) -m sports_dance_scheduling.evaluate --checkpoint checkpoints/best_model.pt
+
+# Docker
+docker-build: ## Build Docker image
+	docker build -t $(DOCKER_IMAGE):$(DOCKER_TAG) .
+
+docker-run: ## Run Docker container
+	docker run -p 8000:8000 -v $$(pwd)/data:/app/data $(DOCKER_IMAGE):$(DOCKER_TAG)
+
+docker-compose-up: ## Start all services with docker-compose
+	docker-compose up -d
+
+docker-compose-down: ## Stop all services
+	docker-compose down
+
+docker-push: ## Push Docker image to registry
+	docker tag $(DOCKER_IMAGE):$(DOCKER_TAG) $$(DOCKER_REGISTRY)/$(DOCKER_IMAGE):$(DOCKER_TAG)
+	docker push $$(DOCKER_REGISTRY)/$(DOCKER_IMAGE):$(DOCKER_TAG)
+
+# Database
+db-init: ## Initialize database
+	$(PYTHON) -c "from sports_dance_scheduling import DatabaseManager; db = DatabaseManager('scheduling.db'); print('Database initialized')"
+
+db-migrate: ## Run database migrations
+	$(PYTHON) scripts/migrate_database.py
+
+db-backup: ## Backup database
+	cp scheduling.db backups/scheduling_$$(date +%Y%m%d_%H%M%S).db
+
+db-restore: ## Restore database from latest backup
+	@latest=$$(ls -t backups/*.db | head -1); \
+	if [ -n "$$latest" ]; then \
+		cp $$latest scheduling.db; \
+		echo "Restored from $$latest"; \
+	else \
+		echo "No backup found"; \
+	fi
+
+# Documentation
+docs: ## Generate documentation
+	sphinx-build -b html docs/source docs/build/html
+	@echo "Documentation generated in docs/build/html/index.html"
+
+docs-serve: ## Serve documentation locally
+	$(PYTHON) -m http.server --directory docs/build/html 8080
+
+# Monitoring
+monitor: ## Start monitoring dashboard
+	$(PYTHON) -m sports_dance_scheduling.monitoring.dashboard
+
+logs: ## Tail application logs
+	tail -f logs/scheduling_system.log
+
+# Deployment
+deploy-dev: ## Deploy to development environment
+	@echo "Deploying to development..."
+	git push origin develop
+	ssh dev-server "cd /app && git pull && make install && make run"
+
+deploy-staging: ## Deploy to staging environment
+	@echo "Deploying to staging..."
+	git push origin staging
+	kubectl apply -f k8s/staging/
+
+deploy-prod: ## Deploy to production
+	@echo "Deploying to production..."
+	@read -p "Are you sure you want to deploy to production? (y/N) " confirm && \
+	if [ "$$confirm" = "y" ]; then \
+		git push origin main; \
+		kubectl apply -f k8s/production/; \
+	fi
+
+# Utilities
+generate-data: ## Generate synthetic data
+	$(PYTHON) scripts/generate_synthetic_data.py --samples 1000
+
+export-model: ## Export model to ONNX
+	$(PYTHON) scripts/export_model.py --input checkpoints/best_model.pt --output models/model.onnx
+
+profile: ## Profile application performance
+	$(PYTHON) -m cProfile -o profile.stats sports_dance_scheduling.py
+	$(PYTHON) -m pstats profile.stats
+
+memory-profile: ## Profile memory usage
+	mprof run $(PYTHON) sports_dance_scheduling.py
+	mprof plot
+
+# Git Hooks
+pre-commit: ## Run pre-commit hooks
+	pre-commit run --all-files
+
+update-deps: ## Update dependencies
+	pip-compile requirements.in
+	pip-sync
+
+# Release
+version: ## Show current version
+	@$(PYTHON) -c "import sports_dance_scheduling; print(sports_dance_scheduling.__version__)"
+
+release-patch: ## Release patch version (x.x.+1)
+	bump2version patch
+
+release-minor: ## Release minor version (x.+1.0)
+	bump2version minor
+
+release-major: ## Release major version (+1.0.0)
+	bump2version major
+
+# Environment Information
+info: ## Show system and environment information
+	@echo "System Information:"
+	@echo "==================="
+	@$(PYTHON) --version
+	@echo "CUDA Available: $$($(PYTHON) -c 'import torch; print(torch.cuda.is_available())')"
+	@echo "PyTorch Version: $$($(PYTHON) -c 'import torch; print(torch.__version__)')"
+	@echo "Working Directory: $$(pwd)"
+	@echo "Database Size: $$(du -h scheduling.db 2>/dev/null || echo 'No database')"
+	@echo "Checkpoint Count: $$(ls checkpoints/*.pt 2>/dev/null | wc -l || echo '0')"
+
+# Development shortcuts
+dev: install format lint test ## Full development cycle
+
+ci: lint test ## Run CI checks locally
+
+all: clean install format lint test docs ## Complete build
