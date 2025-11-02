@@ -15,7 +15,6 @@ This represents a comprehensive production-grade implementation covering:
 
 Total Implementation: ~10,000+ lines of enterprise-grade code
 
-Author: Enterprise Development Team
 Version: 3.0.0 Enterprise Edition
 License: Proprietary
 """
