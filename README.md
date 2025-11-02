@@ -232,9 +232,6 @@ deployment.save_for_production(model, 'models/production_model.pt')
 deployment.export_to_onnx(model, 'models/model.onnx', input_shape)
 ```
 
-## Contributing
-
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ### Development Setup
 
@@ -248,32 +245,9 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 
 This project is licensed under the MIT License - see [LICENSE](LICENSE) file for details.
 
-## Citation
 
-If you use this system in your research, please cite:
 
-```bibtex
-@software{sports_dance_scheduling,
-  title={Enterprise Sports Dance Education Scheduling System},
-  author={Enterprise Development Team},
-  year={2024},
-  version={3.0.0},
-  url={https://github.com/yourusername/sports-dance-scheduling}
-}
-```
 
-## Acknowledgments
-
-- Research paper on multi-objective optimization algorithms
-- PyTorch team for the deep learning framework
-- Contributors and maintainers
-
-## Support
-
-For issues and questions:
-- GitHub Issues: [Report bugs](https://github.com/yourusername/sports-dance-scheduling/issues)
-- Documentation: [Full documentation](https://sports-dance-scheduling.readthedocs.io)
-- Email: support@sportsdancescheduling.com
 
 ## Roadmap
 
